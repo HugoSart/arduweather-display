@@ -1,6 +1,5 @@
 #include <Time.h>
 #include <TimeLib.h>
-#include <TimerOne.h>
 #include <LiquidCrystal.h>
 #include <stdio.h>
 
@@ -15,40 +14,40 @@ int previous = LOW;
 int segundo = 0;
 int minuto = 0;
 
+time_t lastTime;
 long timer = 0;
 long debounce = 200;
 
 // [0] byte temperatura, [1] byte umidade, [2-9] long timestamp, [10 até \0] string previsão do tempo.
-byte serialData[serialSize] = {10,20,0,0,0,0,0,0,0,0,'a','a','a','a','a','a','a','a','a','a','a','a','a','\0'};
+byte serialData[serialSize] = {10,20,0,0,0,0,0,0,0,0,' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','\0'};
 
 boolean readSerial = true;
-boolean tempScreen = true;
+boolean tempScreen = false;
 
 void setup() {
-  // put your setup code here, to run once:
   pinMode(buttonPin, INPUT);
-  
   Serial.begin(9600);
-
   lcd.begin(16, 2);
-  //lcd.print();
+  loading_screen();
+  delay(5000);
+  read_serial();
+  delay(2000);
+  read_serial();
+}
 
-  uint64_t value = (uint64_t)serialData[2] |
-                   (uint64_t)serialData[3] << 8 |
-                   (uint64_t)serialData[4] << 16 |
-                   (uint64_t)serialData[5] << 24 |
-                   (uint64_t)serialData[6] << 32 |
-                   (uint64_t)serialData[7] << 40 |
-                   (uint64_t)serialData[8] << 48 |
-                   (uint64_t)serialData[9] << 56;
+void loading_screen() {
+
+  lcd.setCursor(0,0);
+  lcd.print("Arduweather   SD");
+  lcd.setCursor(0,1);
+  lcd.print("Loading      ...");
   
-  time_t t = value;
-  setTime(t);
-
 }
 
 void switch_screen(){
+  
   reading = digitalRead(buttonPin);
+
   if(reading == HIGH && previous == LOW && millis() - timer > debounce){
     if(buttonState == HIGH) {
       buttonState = LOW;
@@ -66,33 +65,23 @@ void switch_screen(){
     data_screen();
   }
   previous = reading;
-}
-
-int read_serial(){
-  Serial.write(1);
-  for(int i = 0; i < serialSize; i++){
-    if(Serial.available() <= 0){
-      Serial.print("Erro na leitura do serial");
-      return -1;
-    }
-    else
-      serialData[i] = Serial.read();
-  }
-  return 1;
+  
 }
 
 void temperature_screen(){
-  char c[16];
+  
+  char c[16] = "                ";
   lcd.setCursor(0, 0);
-  sprintf(c, " %3d C / H %3d%%", serialData[0], serialData[1]);
+  sprintf(c, " %3d C / H %2d %% ", serialData[0], serialData[1]);
   lcd.print(c);
+  
   lcd.setCursor(0, 1);
-  for(int i = 0; i < 16; i++){
-    c[i] = serialData[i+10];
-    if(c[i] == '\0')
-      break;
-  }
-  lcd.print(c);
+  int i;
+  for (i = 0; i < 16 && serialData[i + 10] != '\0'; i++)
+    lcd.write(serialData[i + 10]);
+  for (; i < 16; i++)
+    lcd.write(' ');  
+  
 }
 
 void data_screen(){
@@ -106,7 +95,7 @@ void data_screen(){
   int ano = year(t);
   char c[16];
   lcd.setCursor(0, 0);
-  sprintf(c, "    %02d:%02d:%02d   ", h, minu, sec);
+  sprintf(c, "    %02d:%02d:%02d    ", h, minu, sec);
   lcd.print(c);
   lcd.setCursor(0, 1);
   sprintf(c, "   %02d/%02d/%04d   ", dia, mes, ano);
@@ -114,16 +103,43 @@ void data_screen(){
   
 }
 
-void ready_serial_again(){
-  if(minuto == 59 and segundo == 59)
-    readSerial = true;
+void update_data(int8_t data[]) {
+
+  int64_t value =  (int64_t)serialData[2] << 56 |
+                   (int64_t)serialData[3] << 48 |
+                   (int64_t)serialData[4] << 40 |
+                   (int64_t)serialData[5] << 32 |
+                   (int64_t)serialData[6] << 24 |
+                   (int64_t)serialData[7] << 16 |
+                   (int64_t)serialData[8] << 8  |
+                   (int64_t)serialData[9];
+  
+  time_t t = value;
+  setTime(t);
+   
+}
+
+bool read_serial(){
+  Serial.print(1);
+
+  for (int i = 0; i < 64; i++)
+    serialData[i] = 0;
+  
+  int n = Serial.readBytesUntil('\n', serialData, 64);
+  for (int i = 0; i < 64; i++)
+    Serial.print(serialData[i]);
+  update_data(serialData);
+  return true;
 }
 
 void loop() {
-  switch_screen();
-  //condição para ler serial
-  /*if(readSerial){
-    readSerial = false;
+
+  time_t t = now();
+  if (t - lastTime > 3600) {
     read_serial();
-  }*/
+    lastTime = t;
+  }
+  
+  switch_screen();
+  
 }
